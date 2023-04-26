@@ -1,0 +1,70 @@
+create or replace view CORL_DEV.CORL_DEV_SINDU.PORTAL_2_VENDOR_ALL(
+	VENDOR_NAME,
+	VENDOR_ORG_ID,
+	STATUS,
+	URL,
+	DUNS_NUMBER,
+	ADDRESS_LINE_1,
+	ADDRESS_LINE_2,
+	CITY,
+	STATE,
+	POSTALCODE,
+	COUNTRY,
+	PHONE,
+	NUMBEROFEMPLOYEES,
+	YEAR_FOUNDED,
+	CREATEDBY,
+	CREATEDON,
+	MODIFIEDBY,
+	MODIFIEDON,
+	MATCH_SOURCE,
+	RNK
+) as
+SELECT * FROM 
+  (SELECT distinct hca.VENDOR_NAME, 
+  coalesce(dn.ACCOUNTID,du.ACCOUNTID) as VENDOR_ORG_ID, 
+  case when coalesce(dn.statuscode,du.statuscode)=1 then 'ACTIVE' else 'INACTIVE' end as status,
+  coalesce(dn.websiteurl,du.websiteurl,hn.property_website,hu.WEB_URL) as URL,
+  coalesce(dn.ct_dunsnumber,du.ct_dunsnumber) as DUNS_NUMBER,
+  coalesce(dn.ADDRESS_1_LINE_1,du.ADDRESS_1_LINE_1,hn.PROPERTY_ADDRESS,hu.PROPERTY_ADDRESS) as ADDRESS_LINE_1,
+  coalesce(dn.ADDRESS_1_LINE_2,du.ADDRESS_1_LINE_2,hn.PROPERTY_ADDRESS_2) as ADDRESS_LINE_2,
+  coalesce(dn.address_1_city,du.address_1_city,hn.PROPERTY_CITY,hu.PROPERTY_CITY) as city,
+  coalesce(dn.address_1_stateorprovince,du.address_1_stateorprovince,hn.PROPERTY_STATE,hu.PROPERTY_STATE) as state,
+  coalesce(dn.address_1_postalcode,du.address_1_postalcode,hn.PROPERTY_ZIP,hu.PROPERTY_ZIP) as postalcode,
+  coalesce(dn.address_1_country,du.address_1_country,hn.PROPERTY_COUNTRY,hu.PROPERTY_COUNTRY) as country,
+  coalesce(dn.TELEPHONE_1,dn.TELEPHONE_2,du.TELEPHONE_1,du.TELEPHONE_2
+           ,dn.ADDRESS_1_TELEPHONE_1,dn.ADDRESS_1_TELEPHONE_2
+           ,du.ADDRESS_1_TELEPHONE_1,du.ADDRESS_1_TELEPHONE_2
+           ,hn.PROPERTY_PHONE,hu.PROPERTY_PHONE,hu.PROPERTY_MOBILEPHONE,hu.PROPERTY_CELL_PHONE_NUMBER) as phone,
+  coalesce(dn.numberofemployees,du.numberofemployees,hn.PROPERTY_NUMBEROFEMPLOYEES,hu.PROPERTY_NUMEMPLOYEES)as numberofemployees,
+  coalesce(dn.ct_yearfoundedcalculation,du.ct_yearfoundedcalculation,hn.PROPERTY_FOUNDED_YEAR) as year_founded,
+  coalesce(dn._CREATEDBY_VALUE,du._CREATEDBY_VALUE) as createdby,
+  coalesce(dn.createdon,du.createdon) as createdon,
+  coalesce(dn._MODIFIEDBY_VALUE,du._MODIFIEDBY_VALUE) as modifiedby,
+  coalesce(dn.modifiedon,du.modifiedon) as modifiedon,
+  case when dn.NAME is not null then 'DYN_NAME'  
+       when du.CLEANURL is not null then 'DYN_URL'
+       when hn.PROPERTY_NAME is not null then 'HUB_NAME' 
+       when hu.WEB_URL is not null then 'HUB_URL' end as MATCH_SOURCE,
+ row_number() over (partition by hca.vendor_name order by coalesce(dn.ADDRESS_1_LINE_1,du.ADDRESS_1_LINE_1,hn.PROPERTY_ADDRESS,hu.PROPERTY_ADDRESS) nulls      last, coalesce(dn.TELEPHONE_1,dn.TELEPHONE_2,du.TELEPHONE_1,du.TELEPHONE_2
+           ,dn.ADDRESS_1_TELEPHONE_1,dn.ADDRESS_1_TELEPHONE_2
+           ,du.ADDRESS_1_TELEPHONE_1,du.ADDRESS_1_TELEPHONE_2
+           ,hn.PROPERTY_PHONE,hu.PROPERTY_PHONE,hu.PROPERTY_MOBILEPHONE,hu.PROPERTY_CELL_PHONE_NUMBER) nulls last
+           ,coalesce(dn.websiteurl,du.websiteurl,hn.property_website,hu.WEB_URL) nulls last 
+           ,coalesce(dn.numberofemployees,du.numberofemployees,hn.PROPERTY_NUMBEROFEMPLOYEES,hu.PROPERTY_NUMEMPLOYEES) desc nulls last
+           ,coalesce(dn.ct_yearfoundedcalculation,du.ct_yearfoundedcalculation,hn.PROPERTY_FOUNDED_YEAR) desc nulls last
+           ,coalesce(dn.ct_dunsnumber,du.ct_dunsnumber) desc nulls last) rnk
+FROM CORL_DEV.PORTAL_REPORTING.TMP_HCA_EMAILS hca
+LEFT JOIN CORL_DEV.PORTAL_REPORTING.TMP_DYN_ACCOUNTS dn
+ON UPPER(hca.VENDOR_NAME) = UPPER(dn.NAME)
+LEFT JOIN CORL_DEV.PORTAL_REPORTING.TMP_DYN_ACCOUNTS du
+ON UPPER(hca.EMAIL_DOMAIN) = UPPER(du.CLEANURL)
+LEFT JOIN PC_FIVETRAN_DB.HUBSPOT.COMPANY  hn
+ON UPPER(hca.VENDOR_NAME) = UPPER(hn.PROPERTY_NAME)
+LEFT JOIN (SELECT distinct hct.*
+FROM "PC_FIVETRAN_DB"."HUBSPOT"."COMPANY" hc
+LEFT JOIN CORL_DEV.PORTAL_REPORTING.TMP_HUBSPOT_CONTACT hct
+  ON UPPER(hc.ID) = UPPER(hct.PROPERTY_ASSOCIATEDCOMPANYID)) hu
+  ON (hca.EMAIL_DOMAIN = hu.WEB_URL)
+) 
+where RNK = 1;
